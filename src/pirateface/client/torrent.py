@@ -18,7 +18,7 @@ from pirateface.listing import info_problems, unsafe_path
 CACHE_DIR = Path(config.CACHE_DIR)
 _lock = threading.Lock()
 _session = None
-_handles = {}  # repo_id -> handle, or None if not on Pirate Face
+_handles = {}  # repo_id -> handle, None (not on Pirate Face), or the Unsafe that refused it
 _NOT_CACHED = object()  # _handles.get() sentinel: a remembered None means "not on Pirate Face"
 _wanted = {}
 _active = {}  # repo_id -> fetch_file calls currently downloading
@@ -92,7 +92,7 @@ def _cleanup():
     if not _lock.acquire(timeout=1):
         return
     try:
-        handles = [h for h in _handles.values() if h is not None]
+        handles = [h for h in _handles.values() if isinstance(h, lt.torrent_handle)]
     finally:
         _lock.release()
     for h in handles:
@@ -209,7 +209,9 @@ def _check_listing(repo_id, h, saved):
     except Unsafe as e:
         _get_session().remove_torrent(h)
         saved.unlink(missing_ok=True)  # the .torrent we cached from the site, kept for nothing
-        _remember(repo_id, e)  # the reason, not None: every later file of this repo says the same
+        # The reason, not None -- and a fresh one, so the stored copy does not pin this handle and
+        # the decoded info through its traceback for the rest of the process.
+        _remember(repo_id, Unsafe(str(e)))
         raise
 
 
